@@ -15,9 +15,15 @@ class YOLOModelEngine {
       throw new Error('ONNX Runtime Web script not loaded. Check CDN link.');
     }
 
-    // Configure WASM asset location
+    // Configure WASM asset location (CDN path for .wasm binaries)
     ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/';
-    ort.env.wasm.numThreads = Math.min(4, navigator.hardwareConcurrency || 2);
+    // Only enable multithreading when Cross-Origin Isolation is active (requires COOP + COEP headers)
+    // Falls back to single-thread automatically when not available (avoids console warnings)
+    if (crossOriginIsolated) {
+      ort.env.wasm.numThreads = Math.min(4, navigator.hardwareConcurrency || 2);
+    } else {
+      ort.env.wasm.numThreads = 1;
+    }
 
     const hasWebGPU = !!navigator.gpu;
     const providersToTry = hasWebGPU ? ['webgpu', 'wasm'] : ['wasm'];
