@@ -78,7 +78,7 @@ function preprocessToTensor(letterboxCanvas) {
  * Post-process YOLO26 end2end tensor output [1, 300, 6]
  * Tensor values per detection: [x1, y1, x2, y2, confidence, class_id]
  */
-function postProcessOutput(outputTensor, confThreshold, letterboxInfo) {
+function postProcessOutput(outputTensor, confThreshold, letterboxInfo, maxDetections = 50) {
   const data = outputTensor.data; // Float32Array
   const dims = outputTensor.dims; // e.g. [1, 300, 6]
   
@@ -125,16 +125,29 @@ function postProcessOutput(outputTensor, confThreshold, letterboxInfo) {
         classId,
         className: CLASS_NAMES[classId] || `class-${classId}`
       });
+
+      if (detections.length >= maxDetections) break;
     }
   }
 
   return detections;
 }
 
+// Color palettes for bounding boxes
+const BOX_COLORS = {
+  cyan: { stroke: '#06b6d4', fill: 'rgba(6, 182, 212, 0.15)', textBg: 'rgba(6, 182, 212, 0.95)', textColor: '#090d16' },
+  emerald: { stroke: '#10b981', fill: 'rgba(16, 185, 129, 0.15)', textBg: 'rgba(16, 185, 129, 0.95)', textColor: '#090d16' },
+  rose: { stroke: '#f43f5e', fill: 'rgba(244, 63, 94, 0.15)', textBg: 'rgba(244, 63, 94, 0.95)', textColor: '#ffffff' },
+  amber: { stroke: '#f59e0b', fill: 'rgba(245, 158, 11, 0.15)', textBg: 'rgba(245, 158, 11, 0.95)', textColor: '#090d16' }
+};
+
 /**
  * Draw bounding boxes and labels on transparent overlay canvas
  */
-function drawDetections(overlayCanvas, detections, origWidth, origHeight) {
+function drawDetections(overlayCanvas, detections, origWidth, origHeight, options = {}) {
+  const { showLabels = true, boxTheme = 'cyan' } = options;
+  const color = BOX_COLORS[boxTheme] || BOX_COLORS.cyan;
+
   const ctx = overlayCanvas.getContext('2d');
   
   // Set internal canvas resolution to match natural/original dimensions
@@ -151,10 +164,10 @@ function drawDetections(overlayCanvas, detections, origWidth, origHeight) {
     const { x1, y1, boxWidth, boxHeight, confidence, className } = det;
 
     // Glowing Bounding Box
-    ctx.shadowColor = '#06b6d4';
+    ctx.shadowColor = color.stroke;
     ctx.shadowBlur = 12;
-    ctx.strokeStyle = '#06b6d4';
-    ctx.fillStyle = 'rgba(6, 182, 212, 0.12)';
+    ctx.strokeStyle = color.stroke;
+    ctx.fillStyle = color.fill;
 
     // Rounded rectangle box
     const radius = 6;
@@ -163,37 +176,39 @@ function drawDetections(overlayCanvas, detections, origWidth, origHeight) {
     ctx.fill();
     ctx.stroke();
 
-    // Reset shadow for text label
+    // Reset shadow
     ctx.shadowBlur = 0;
 
-    // Label Text
-    const confPercent = (confidence * 100).toFixed(1) + '%';
-    const labelText = `${className} ${confPercent}`;
+    if (showLabels) {
+      // Label Text
+      const confPercent = (confidence * 100).toFixed(1) + '%';
+      const labelText = `${className} ${confPercent}`;
 
-    const fontSize = Math.max(14, Math.round(origWidth / 45));
-    ctx.font = `600 ${fontSize}px 'Inter', sans-serif`;
+      const fontSize = Math.max(14, Math.round(origWidth / 45));
+      ctx.font = `600 ${fontSize}px 'Inter', sans-serif`;
 
-    const textMetrics = ctx.measureText(labelText);
-    const textWidth = textMetrics.width;
-    const textHeight = fontSize;
+      const textMetrics = ctx.measureText(labelText);
+      const textWidth = textMetrics.width;
+      const textHeight = fontSize;
 
-    const padX = 8;
-    const padY = 5;
+      const padX = 8;
+      const padY = 5;
 
-    // Position label above box if space allows, otherwise inside top
-    let labelY = y1 - textHeight - (padY * 2);
-    if (labelY < 0) {
-      labelY = y1 + 4;
+      // Position label above box if space allows, otherwise inside top
+      let labelY = y1 - textHeight - (padY * 2);
+      if (labelY < 0) {
+        labelY = y1 + 4;
+      }
+
+      // Label background pill
+      ctx.fillStyle = color.textBg;
+      ctx.beginPath();
+      ctx.roundRect(x1, labelY, textWidth + (padX * 2), textHeight + (padY * 2), 4);
+      ctx.fill();
+
+      // Label text
+      ctx.fillStyle = color.textColor;
+      ctx.fillText(labelText, x1 + padX, labelY + textHeight);
     }
-
-    // Label background pill
-    ctx.fillStyle = 'rgba(6, 182, 212, 0.95)';
-    ctx.beginPath();
-    ctx.roundRect(x1, labelY, textWidth + (padX * 2), textHeight + (padY * 2), 4);
-    ctx.fill();
-
-    // Label text
-    ctx.fillStyle = '#090d16';
-    ctx.fillText(labelText, x1 + padX, labelY + textHeight);
   });
 }

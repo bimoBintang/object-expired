@@ -1,5 +1,6 @@
 /**
- * Expired Product Detector — Main Application Controller (Photo & Video Support)
+ * Expired Product Detector — Main Application Controller
+ * Features: Photo/Video Upload, Webcam Stream, Stop/Reset Control, and Settings Panel
  */
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -11,11 +12,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const btnUpload = document.getElementById('btn-upload');
   const btnWebcam = document.getElementById('btn-webcam');
+  const btnStop = document.getElementById('btn-stop');
   const fileInput = document.getElementById('file-input');
 
+  // Settings DOM Elements
   const confSlider = document.getElementById('conf-slider');
   const confValue = document.getElementById('conf-value');
+  const maxDetSlider = document.getElementById('max-det-slider');
+  const maxDetValue = document.getElementById('max-det-value');
+  const showLabelsToggle = document.getElementById('show-labels-toggle');
+  const colorPills = document.querySelectorAll('.color-pill');
 
+  // Stage & Media Elements
   const stageContainer = document.getElementById('stage-container');
   const dropPlaceholder = document.getElementById('drop-placeholder');
   const canvasWrapper = document.getElementById('canvas-wrapper');
@@ -24,14 +32,19 @@ document.addEventListener('DOMContentLoaded', () => {
   const webcamVideo = document.getElementById('webcam-video');
   const uploadedVideo = document.getElementById('uploaded-video');
 
+  // Stats Elements
   const statBackend = document.getElementById('stat-backend');
   const statTime = document.getElementById('stat-time');
   const statCount = document.getElementById('stat-count');
   const statFps = document.getElementById('stat-fps');
   const resultsList = document.getElementById('results-list');
 
-  // Application State
+  // Application Settings & State
   let confThreshold = parseFloat(confSlider.value);
+  let maxDetections = parseInt(maxDetSlider.value);
+  let showLabels = showLabelsToggle.checked;
+  let boxTheme = 'cyan';
+
   let currentImageSource = null; // Last uploaded HTMLImageElement
   let isWebcamActive = false;
   let isUploadedVideoActive = false;
@@ -75,7 +88,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   initApp();
 
-  // Helper: Stop all active media playback & loops
+  // Helper: Stop all active media & clear stage
   function stopAllActiveMedia() {
     // Stop webcam
     isWebcamActive = false;
@@ -86,7 +99,7 @@ document.addEventListener('DOMContentLoaded', () => {
     webcamVideo.pause();
     webcamVideo.srcObject = null;
 
-    // Reset webcam button
+    // Reset webcam button UI
     btnWebcam.innerHTML = `
       <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
       Live Kamera
@@ -110,18 +123,74 @@ document.addEventListener('DOMContentLoaded', () => {
     statFps.textContent = '—';
   }
 
-  // 2. Confidence Slider Handler
-  confSlider.addEventListener('input', (e) => {
-    confThreshold = parseFloat(e.target.value);
-    confValue.textContent = `${Math.round(confThreshold * 100)}%`;
+  // Full Stop & Reset Stage
+  function resetStage() {
+    stopAllActiveMedia();
+    currentImageSource = null;
 
-    // Re-run detection on current static image if active
+    // Hide canvas, show placeholder
+    canvasWrapper.classList.remove('active');
+    dropPlaceholder.style.display = 'flex';
+
+    // Clear canvases
+    const ctxMain = mainCanvas.getContext('2d');
+    ctxMain.clearRect(0, 0, mainCanvas.width, mainCanvas.height);
+    const ctxOverlay = overlayCanvas.getContext('2d');
+    ctxOverlay.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+
+    // Reset stats
+    statTime.textContent = '—';
+    statCount.textContent = '—';
+    statFps.textContent = '—';
+
+    // Reset list
+    renderDetectionsList([]);
+  }
+
+  // Re-run detection on active static image when settings change
+  function reRenderIfStatic() {
     if (currentImageSource && !isWebcamActive && !isUploadedVideoActive) {
       runSingleDetection(currentImageSource);
     }
+  }
+
+  // 2. Settings Listeners
+  // Confidence Slider
+  confSlider.addEventListener('input', (e) => {
+    confThreshold = parseFloat(e.target.value);
+    confValue.textContent = `${Math.round(confThreshold * 100)}%`;
+    reRenderIfStatic();
   });
 
-  // 3. Upload Buttons & Input Handlers
+  // Max Detections Slider
+  maxDetSlider.addEventListener('input', (e) => {
+    maxDetections = parseInt(e.target.value);
+    maxDetValue.textContent = `${maxDetections} Objek`;
+    reRenderIfStatic();
+  });
+
+  // Show Labels Toggle
+  showLabelsToggle.addEventListener('change', (e) => {
+    showLabels = e.target.checked;
+    reRenderIfStatic();
+  });
+
+  // Color Pills Selection
+  colorPills.forEach(pill => {
+    pill.addEventListener('click', () => {
+      colorPills.forEach(p => p.classList.remove('active'));
+      pill.classList.add('active');
+      boxTheme = pill.dataset.color || 'cyan';
+      reRenderIfStatic();
+    });
+  });
+
+  // 3. Stop / Reset Button Handler
+  btnStop.addEventListener('click', () => {
+    resetStage();
+  });
+
+  // 4. Upload Buttons & Input Handlers
   btnUpload.addEventListener('click', () => {
     fileInput.click();
   });
@@ -133,7 +202,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // 4. Drag and Drop Handlers
+  // 5. Drag and Drop Handlers
   stageContainer.addEventListener('dragover', (e) => {
     e.preventDefault();
     stageContainer.classList.add('drag-over');
@@ -189,7 +258,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // 5. Single Image Detection Workflow
+  // 6. Single Image Detection Workflow
   async function runSingleDetection(imgSource) {
     if (!window.yoloEngine.isReady) return;
 
@@ -215,11 +284,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const outputTensor = await window.yoloEngine.predict(tensor);
     const inferenceTimeMs = (performance.now() - startTime).toFixed(1);
 
-    // Postprocessing
-    const detections = postProcessOutput(outputTensor, confThreshold, letterboxInfo);
+    // Postprocessing with Max Detections
+    const detections = postProcessOutput(outputTensor, confThreshold, letterboxInfo, maxDetections);
 
-    // Render Overlay Canvas
-    drawDetections(overlayCanvas, detections, origW, origH);
+    // Render Overlay Canvas with styling options
+    drawDetections(overlayCanvas, detections, origW, origH, { showLabels, boxTheme });
 
     // Update Stats
     statTime.textContent = `${inferenceTimeMs} ms`;
@@ -230,7 +299,7 @@ document.addEventListener('DOMContentLoaded', () => {
     renderDetectionsList(detections);
   }
 
-  // 6. Live Webcam Handler
+  // 7. Live Webcam Handler
   btnWebcam.addEventListener('click', () => {
     if (isWebcamActive) {
       stopAllActiveMedia();
@@ -274,7 +343,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // 7. Generic Video Frame Processing Loop (Webcam & Uploaded Video)
+  // 8. Generic Video Frame Processing Loop (Webcam & Uploaded Video)
   async function runVideoFrameLoop(videoElement, isActiveCheck) {
     if (!isActiveCheck() || videoElement.paused || videoElement.ended) {
       if (isActiveCheck()) {
@@ -302,11 +371,11 @@ document.addEventListener('DOMContentLoaded', () => {
       const outputTensor = await window.yoloEngine.predict(tensor);
       const inferenceTimeMs = (performance.now() - startTime).toFixed(1);
 
-      // Postprocessing
-      const detections = postProcessOutput(outputTensor, confThreshold, letterboxInfo);
+      // Postprocessing with Max Detections
+      const detections = postProcessOutput(outputTensor, confThreshold, letterboxInfo, maxDetections);
 
-      // Render overlay
-      drawDetections(overlayCanvas, detections, vidW, vidH);
+      // Render overlay with styling options
+      drawDetections(overlayCanvas, detections, vidW, vidH, { showLabels, boxTheme });
 
       // Calculate FPS
       frameCount++;
@@ -328,7 +397,7 @@ document.addEventListener('DOMContentLoaded', () => {
     animationFrameId = requestAnimationFrame(() => runVideoFrameLoop(videoElement, isActiveCheck));
   }
 
-  // 8. Render Detections List Pills
+  // 9. Render Detections List Pills
   function renderDetectionsList(detections) {
     resultsList.innerHTML = '';
 
