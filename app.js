@@ -111,7 +111,8 @@ document.addEventListener('DOMContentLoaded', () => {
     uploadedVideo.pause();
     if (uploadedVideo.src) {
       URL.revokeObjectURL(uploadedVideo.src);
-      uploadedVideo.src = '';
+      uploadedVideo.removeAttribute('src');
+      uploadedVideo.load();
     }
 
     // Cancel animation loop
@@ -127,6 +128,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function resetStage() {
     stopAllActiveMedia();
     currentImageSource = null;
+    fileInput.value = '';
 
     // Hide canvas, show placeholder
     canvasWrapper.classList.remove('active');
@@ -135,8 +137,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // Clear canvases
     const ctxMain = mainCanvas.getContext('2d');
     ctxMain.clearRect(0, 0, mainCanvas.width, mainCanvas.height);
+    mainCanvas.width = 0;
+    mainCanvas.height = 0;
+
     const ctxOverlay = overlayCanvas.getContext('2d');
     ctxOverlay.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+    overlayCanvas.width = 0;
+    overlayCanvas.height = 0;
 
     // Reset stats
     statTime.textContent = '—';
@@ -284,6 +291,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const outputTensor = await window.yoloEngine.predict(tensor);
     const inferenceTimeMs = (performance.now() - startTime).toFixed(1);
 
+    // Check if user clicked Stop while predict was running
+    if (currentImageSource !== imgSource) return;
+
     // Postprocessing with Max Detections
     const detections = postProcessOutput(outputTensor, confThreshold, letterboxInfo, maxDetections);
 
@@ -303,6 +313,7 @@ document.addEventListener('DOMContentLoaded', () => {
   btnWebcam.addEventListener('click', () => {
     if (isWebcamActive) {
       stopAllActiveMedia();
+      resetStage();
     } else {
       startWebcam();
     }
@@ -346,9 +357,6 @@ document.addEventListener('DOMContentLoaded', () => {
   // 8. Generic Video Frame Processing Loop (Webcam & Uploaded Video)
   async function runVideoFrameLoop(videoElement, isActiveCheck) {
     if (!isActiveCheck() || videoElement.paused || videoElement.ended) {
-      if (isActiveCheck()) {
-        animationFrameId = requestAnimationFrame(() => runVideoFrameLoop(videoElement, isActiveCheck));
-      }
       return;
     }
 
@@ -370,6 +378,9 @@ document.addEventListener('DOMContentLoaded', () => {
       const startTime = performance.now();
       const outputTensor = await window.yoloEngine.predict(tensor);
       const inferenceTimeMs = (performance.now() - startTime).toFixed(1);
+
+      // Check if user clicked Stop while predict was running
+      if (!isActiveCheck()) return;
 
       // Postprocessing with Max Detections
       const detections = postProcessOutput(outputTensor, confThreshold, letterboxInfo, maxDetections);
@@ -394,7 +405,9 @@ document.addEventListener('DOMContentLoaded', () => {
       renderDetectionsList(detections);
     }
 
-    animationFrameId = requestAnimationFrame(() => runVideoFrameLoop(videoElement, isActiveCheck));
+    if (isActiveCheck()) {
+      animationFrameId = requestAnimationFrame(() => runVideoFrameLoop(videoElement, isActiveCheck));
+    }
   }
 
   // 9. Render Detections List Pills
