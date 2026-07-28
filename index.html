@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Expired Product Detector — WebGPU & WASM AI Inference</title>
+  <meta name="description" content="Aplikasi web AI real-time untuk mendeteksi produk kedaluwarsa (expired) langsung di browser menggunakan ONNX Runtime WebAssembly & WebGPU.">
+  <link rel="stylesheet" href="index.css">
+</head>
+<body>
+
+  <!-- Loading Overlay -->
+  <div id="loading-overlay" role="dialog" aria-label="Loading AI Model">
+    <div class="spinner-box">
+      <div class="spinner-ring"></div>
+    </div>
+    <div class="loading-title">Memuat Model AI Expired Detector</div>
+    <div class="progress-container">
+      <div id="progress-bar" class="progress-bar"></div>
+    </div>
+    <div id="loading-status" class="loading-subtext">Menyiapkan ONNX Runtime...</div>
+  </div>
+
+  <!-- Header -->
+  <header>
+    <div class="header-badge">
+      <span class="badge-dot"></span>
+      <span id="header-backend-name">WebGPU / WASM</span>
+    </div>
+    <h1>Expired Product Detector</h1>
+    <p>Deteksi produk kedaluwarsa secara instan di browser tanpa mengirim data ke server</p>
+  </header>
+
+  <!-- Main Content -->
+  <main>
+
+    <!-- Controls Bar -->
+    <section class="glass-card controls-bar" aria-label="Kontrol Deteksi">
+      <div class="btn-group">
+        <button id="btn-upload" class="btn btn-primary">
+          <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+          Upload Media (Foto / Video)
+        </button>
+        <button id="btn-webcam" class="btn btn-secondary">
+          <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+          Live Kamera
+        </button>
+        <input type="file" id="file-input" accept="image/*,video/*" style="display: none;">
+      </div>
+
+      <div class="slider-group">
+        <label for="conf-slider">Confidence Threshold:</label>
+        <input type="range" id="conf-slider" min="0.1" max="0.95" step="0.05" value="0.5">
+        <span id="conf-value" class="slider-value">50%</span>
+      </div>
+    </section>
+
+    <!-- Stage Container (Drop Zone & Canvas) -->
+    <section class="glass-card" style="padding: 1rem;">
+      <div id="stage-container" class="stage-container">
+        
+        <!-- Placeholder / Drop Zone -->
+        <div id="drop-placeholder" class="drop-placeholder">
+          <svg class="drop-icon" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
+          </svg>
+          <div class="drop-title">Tarik & Lepas gambar atau video di sini</div>
+          <div class="drop-desc">atau klik tombol "Upload Media" di atas (JPG, PNG, MP4, WebM, MOV)</div>
+        </div>
+
+        <!-- Canvas Wrapper -->
+        <div id="canvas-wrapper" class="canvas-wrapper">
+          <canvas id="main-canvas"></canvas>
+          <canvas id="overlay-canvas"></canvas>
+        </div>
+
+        <!-- Hidden Video Elements -->
+        <video id="webcam-video" autoplay playsinline muted style="display: none;"></video>
+        <video id="uploaded-video" autoplay playsinline loop muted style="display: none;"></video>
+
+      </div>
+    </section>
+
+    <!-- Stats Panel -->
+    <section class="glass-card">
+      <div class="stats-grid">
+        <div class="stat-box">
+          <span class="stat-label">Execution Provider</span>
+          <span id="stat-backend" class="stat-value highlight">—</span>
+        </div>
+        <div class="stat-box">
+          <span class="stat-label">Inference Time</span>
+          <span id="stat-time" class="stat-value">—</span>
+        </div>
+        <div class="stat-box">
+          <span class="stat-label">Detections Found</span>
+          <span id="stat-count" class="stat-value success">—</span>
+        </div>
+        <div class="stat-box">
+          <span class="stat-label">FPS (Webcam)</span>
+          <span id="stat-fps" class="stat-value warning">—</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Detections List Section -->
+    <section class="glass-card">
+      <div class="results-header">
+        <h2 class="results-title">Daftar Deteksi</h2>
+      </div>
+      <div id="results-list" class="detection-badge-list">
+        <span class="no-detections">Belum ada gambar yang diproses.</span>
+      </div>
+    </section>
+
+  </main>
+
+  <footer>
+    <p>Powered by <strong>ONNX Runtime Web (WebGPU & WASM)</strong> • Ultralytics YOLO26m Model</p>
+  </footer>
+
+  <!-- ONNX Runtime Web Library CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.all.min.js"></script>
+  <!-- Application Scripts -->
+  <script src="utils.js"></script>
+  <script src="model.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
